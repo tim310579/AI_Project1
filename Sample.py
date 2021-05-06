@@ -19,22 +19,28 @@ LAYER = 6
 ROW = 6
 COLUMN = 6
 
+
 class Board:
     def __init__(self):
-        self.board = np.zeros((LAYER, ROW, COLUMN))
-        for i in range(6):
-            self.board[i][0][0]=-1   #left down
-            self.board[i][0][1]=-1
-            self.board[i][1][0]=-1
-            self.board[i][0][COLUMN-1]=-1     #right down
-            self.board[i][0][COLUMN-2]=-1
-            self.board[i][1][COLUMN-1]=-1
-            self.board[i][ROW-1][0]=-1   #left up
-            self.board[i][ROW-1][1]=-1
-            self.board[i][ROW-2][0]=-1
-            self.board[i][ROW-1][COLUMN-1]=-1   #right up
-            self.board[i][ROW-1][COLUMN-2]=-1
-            self.board[i][ROW-2][COLUMN-1]=-1
+        self.board = np.zeros((LAYER, ROW, COLUMN), dtype = int)
+        self.kth_line = []
+        self.curr_kth = 0
+        #for i in range(6):
+        self.board[0:6, 0, [0,1,COLUMN-2,COLUMN-1]]=-1
+        self.board[0:6, 1, [0,COLUMN-1]]=-1
+            #self.board[i][0][0]=-1   #left down
+            #self.board[i][0][1]=-1
+            #self.board[i][0][COLUMN-1]=-1     #right down
+            #self.board[i][0][COLUMN-2]=-1
+            #self.board[i][1][COLUMN-1]=-1
+        self.board[0:6, ROW-1, [0,1,COLUMN-2,COLUMN-1]]=-1
+        self.board[0:6, ROW-2, [0,COLUMN-1]]=-1
+            #self.board[i][ROW-1][0]=-1   #left up
+            #self.board[i][ROW-1][1]=-1
+            #self.board[i][ROW-2][0]=-1
+            #self.board[i][ROW-1][COLUMN-1]=-1   #right up
+            #self.board[i][ROW-1][COLUMN-2]=-1
+            #self.board[i][ROW-2][COLUMN-1]=-1
 
     def print_board(self):
         for i in range(6):
@@ -59,12 +65,14 @@ class Board:
             # Check horizontal lines
             for c in range(COLUMN-3):
                 for r in range(1, ROW-1):
-                    if self.board[i][r][c] == piece and self.board[i][r][c+1] == piece and self.board[i][r][c+2] == piece and self.board[i][r][c+3] == piece:
+                    if np.array_equiv(self.board[i, r, c:c+4], [piece, piece, piece, piece]):
+                    #if self.board[i][r][c] == piece and self.board[i][r][c+1] == piece and self.board[i][r][c+2] == piece and self.board[i][r][c+3] == piece:
                         line += 1
             # Check vertical lines
             for c in range(1, COLUMN-1):
                 for r in range(ROW-3):
-                    if self.board[i][r][c] == piece and self.board[i][r+1][c] == piece and self.board[i][r+2][c] == piece and self.board[i][r+3][c] == piece:
+                    if np.array_equiv(self.board[i, r:r+4, c], [piece, piece, piece, piece]):
+                    #if self.board[i][r][c] == piece and self.board[i][r+1][c] == piece and self.board[i][r+2][c] == piece and self.board[i][r+3][c] == piece:
                         line += 1
             # Check positively sloped lines
             for c in range(COLUMN-3):
@@ -84,7 +92,8 @@ class Board:
             for c in range(6):  # Check same position's height line
                 for r in range(6):
                     for i in range(curr_layer-2):
-                        if self.board[i][r][c] == piece and self.board[i+1][r][c] == piece and self.board[i+2][r][c] == piece and self.board[i+3][r][c] == piece:
+                        if np.array_equiv(self.board[i:i+4, r, c], [piece, piece, piece, piece]):
+                        #if self.board[i][r][c] == piece and self.board[i+1][r][c] == piece and self.board[i+2][r][c] == piece and self.board[i+3][r][c] == piece:
                             line += 1
             for i in range(curr_layer-2):
                 # Check horizontal and positively sloped lines
@@ -135,10 +144,15 @@ class Board:
         return k
     
 
-    def drop_piece(self, row, col, piece):
+    def drop_piece(self, row, col, piece):          #add kth line
         for i in range(6):
             if self.board[i][row][col] == 0:
+                #prev_k = self.current_k()
                 self.board[i][row][col] = piece
+                now_k = self.current_k()
+                if self.curr_kth != now_k:
+                    self.kth_line.append(piece)
+                    self.curr_kth = now_k
                 return
         return False
 
@@ -207,7 +221,6 @@ class Board:
         if score > 0: print(score)
         return r, c
 
-
         
 def GetStep(board, is_black):
     """
@@ -250,6 +263,7 @@ board1.print_board()
 #print(board1.current_k())
 print('black', board1.line_count(1))
 print('white', board1.line_count(2))
+print(board1.kth_line)
 
 '''
 while(True):
