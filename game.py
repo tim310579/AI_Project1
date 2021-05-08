@@ -1,6 +1,7 @@
 import random
 import numpy as np
 from copy import deepcopy
+import STcpClient
 
 LAYER = 6
 ROW = 6
@@ -88,20 +89,46 @@ class Game:
         return hash
 
 
-    def generate_moves(self):
+    def generate_moves(self, *, player=None):
         '''
         Generate all possible moves from current position as array of arrays
         '''
         rows, cols = np.where(self.rods)
         valid_rods = [self.empty in self.board[:, r, c] for (r, c) in zip(rows, cols)]
-        return np.array(list(zip(rows, cols)))[valid_rods]
+        moves = np.array(list(zip(rows, cols)))[valid_rods]
+        if player:
+            moves = sorted(
+                moves,
+                key=lambda m: self.evaluate_move(m[0], m[1], player),
+                reverse=True
+            )
+        return moves 
+
+
+    def evaluate_move(self, r, c, player):
+        ''' Return an evaluation on the move '''
+        # Preserve state
+        board, scores, potential, kth_line = self.get_state()
+
+        # Advance
+        self.drop_piece(r, c, player)
+        score = self.evaluate(player)
+
+        # Restore
+        self.set_state(board, scores, potential, kth_line)
+
+        return score
+
+
+    def evaluate(self, player):
+        opponenet = self.get_opponent(player)
+        return (self.scores[player] - self.scores[opponenet]) * 10 + (self.potential[player] - self.potential[opponenet])
 
 
     def drop_piece(self, r, c, piece):
         '''
         Drop a piece and update relavant data
         '''
-        if piece == 0: piece = 2
         rod = self.board[:, r, c]
         if self.empty in rod:
             free_layer = np.nonzero(rod == 0)[0][0]
@@ -116,24 +143,30 @@ class Game:
         '''
         Tries to infer the moves that lead to the given position
         '''
-        difference = self.board != board
-        layers, rows, cols = np.where(difference)
-        order = np.argsort(layers)
-        layers = layers[order]
-        rows = rows[order]
-        cols = cols[order]
-        for (i, e) in enumerate(board[layers, rows, cols]):
-            self.drop_piece(
-                rows[i],
-                cols[i],
-                e
-            )
+        try:
+            difference = self.board != np.array(board)
+            if difference.any():
+                layers, rows, cols = np.where(difference)
+                order = np.argsort(layers)
+                layers = layers[order]
+                rows = rows[order]
+                cols = cols[order]
+                for (i, e) in enumerate(board[layers, rows, cols]):
+                    self.drop_piece(
+                        rows[i],
+                        cols[i],
+                        e
+                    )
+        except:
+            print(self.board)
+            print(board)
 
 
     def update_score(self, l, r, c, piece):
         '''
         Updates scores count and k, should be called after every move.
         '''
+        oppo_piece = self.get_opponent(piece)
         directions = np.array([ # there should be 13 directions (3*3*3 - 1) / 2
             [0, 0, 1],
             [0, 1, 0],
@@ -151,7 +184,6 @@ class Game:
         for dir in directions:
             segment = self.get_segment(l, r, c, dir)
             for i in range(segment.size-3):
-                oppo_piece = self.player_one if piece == self.player_two else self.player_two
                 self.evaluate_window(segment[i:i+4].tolist(), piece, oppo_piece)
         
 
@@ -194,6 +226,7 @@ class Game:
             window.count(player),
             window.count(opponent)
         )
+        
         if pieces == (2, 2, 0):  # one -> two
             self.potential[player] += 2
         elif pieces == (1, 3, 0):  # two -> three
@@ -206,6 +239,10 @@ class Game:
             self.potential[opponent] -= 2
         elif pieces == (0, 1, 3):  # block opponent's three
             self.potential[opponent] -= 5
+
+
+    def get_opponent(self, player):
+        return self.player_one if player == self.player_two else self.player_two
 
 
     def print_board(self):
@@ -221,79 +258,57 @@ class Game:
                 print("".join(map(symbol_map, self.board[l][i])))
 
 
-
-class AB_Pruning_Node:
+class MinimaxAI:
     def __init__(self, board):
         self.board = board
-        self.best_move = (0,0)
+        self.best_move = (0, 0)
 
-    def Evaluate(self):
-        return (self.board.scores[1]-self.board.scores[2])*10+(self.board.potential[1]-self.board.potential[2])
 
-    def Search(self, depth, alpha, beta, is_black):
-        if(depth == 0):
-            return self.Evaluate()
+    def update(self, new_board):
+        self.board.infer_move(new_board)
+
+
+    def get_step(self, player):
+        self.search(3, -99999, 99999, player)
+        return self.best_move
+        
+
+    def search(self, depth, alpha, beta, player):
+        if(depth == 0 or self.board.is_terminal()):
+            return self.board.evaluate(player)
 
         for (r, c) in self.board.generate_moves():
+            # Preserve state
             p_board, p_scores, p_potential, p_kth_line = self.board.get_state()
             
-            self.board.drop_piece(r, c, is_black)
-            next_ab_pruning = AB_Pruning_Node(self.board)
-            evaluation = -next_ab_pruning.Search(depth-1, -beta, -alpha, is_black);
-            
+            # Search ahead
+            self.board.drop_piece(r, c, player)
+            opponent = self.board.get_opponent(player)
+            evaluation = -self.search(depth-1, -beta, -alpha, opponent);  
+
+            # Restore          
             self.board.set_state(p_board, p_scores, p_potential, p_kth_line)
-            #print(evaluation, alpha, beta)
+
             if(evaluation >= beta):
                 break
-                #return evaluation
+
             if(evaluation > alpha):
                 alpha = evaluation
                 self.best_move = (r, c)
+
         return alpha
 
 
-def GetStep(board, is_black):
-    if is_black == 0: is_black = 2
-    game.infer_move(board)
-    node = AB_Pruning_Node(game)
-    node.Search(3,-99999,99999, is_black)
-    return node.best_move
-
-
-game = Game(LAYER, ROW, COLUMN)
-
-'''
-for i in range (32):
-    print ("take turns P1")
-    r, c = GetStep(game.board,1)
-    game.drop_piece(r, c, 1)
-    game.print_board()
-
-    print ("take turns P2")
-    r, c = game.generate_moves()[0]
-    #r, c = GetStep(game.board,0)
-    game.drop_piece(r, c, 2)
-
-    new_board=game.board
-
-    game.print_board()
-    print(game.scores, game.potential)
-    #input("press enter to continue..")
-
-#print(game.is_terminal())
-#print(game.scores, game.potential)
-#game.print_board()
-
-'''
-
-
-while(True):
+ai = MinimaxAI(Game(LAYER, ROW, COLUMN))
+old = 0
+while True:
     (stop_program, id_package, board, is_black) = STcpClient.GetBoard()
-    if(stop_program):
+    if stop_program:
         break
-    game.board = board
-    Step = GetStep(board, is_black)
-    r, c = GetStep(game.board, is_black)
-    game.drop_piece(r, c, is_black)
+    if old != is_black:
+        ai = MinimaxAI(Game(LAYER, ROW, COLUMN))    #clear
+    old = is_black
+    player = 1 if is_black else 2
+    ai.update(np.array(board))
+    Step = ai.get_step(player)
     STcpClient.SendStep(id_package, Step)
-
